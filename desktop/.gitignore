@@ -1,0 +1,9 @@
+node_modules/
+out/
+dist/
+release/
+data/
+*.log
+
+# 设计稿与方案文档保留在仓库中
+!设计稿/*.png

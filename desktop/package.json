@@ -1,0 +1,34 @@
+{
+  "name": "wuya",
+  "version": "0.21.0",
+  "description": "无涯 · 本地小说阅读器",
+  "main": "./out/main/index.js",
+  "author": "Wuya",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "dist": "electron-vite build && electron-builder --win --x64"
+  },
+  "dependencies": {
+    "jszip": "^3.10.2",
+    "pdfjs-dist": "4.10.38",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "zustand": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "electron": "^33.0.0",
+    "electron-builder": "^26.18.0",
+    "electron-vite": "^3.0.0",
+    "typescript": "^5.6.0",
+    "vite": "^5.4.0"
+  }
+}

@@ -1,0 +1,38 @@
+appId: com.wuya.reader
+productName: 无涯
+copyright: Copyright © 2026 Wuya
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - out/**/*
+  - package.json
+  - '!**/*.map'
+
+asar: true
+compression: normal
+
+win:
+  icon: build/icon.ico
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+  artifactName: Wuya-${version}-${arch}.${ext}
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: true
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: 无涯
+  uninstallDisplayName: 无涯
+  deleteAppDataOnUninstall: false
+
+portable:
+  artifactName: Wuya-${version}-portable.${ext}

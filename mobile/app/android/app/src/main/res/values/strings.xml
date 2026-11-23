@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">无涯</string>
+    <string name="title_activity_main">无涯</string>
+    <string name="package_name">com.wuya.reader</string>
+    <string name="custom_url_scheme">com.wuya.reader</string>
+    <string name="splash_poem">书山有路勤为径\n学海无涯苦作舟</string>
+</resources>
