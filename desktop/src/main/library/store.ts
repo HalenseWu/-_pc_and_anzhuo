@@ -137,6 +137,11 @@ export class LibraryStore {
     return join(this.bookDir(id), 'meta.json')
   }
 
+  writeMeta(id: string, meta: BookMeta): void {
+    mkdirSync(this.bookDir(id), { recursive: true })
+    writeFileSync(this.metaPath(id), JSON.stringify(meta, null, 2), 'utf-8')
+  }
+
   writeBookFiles(id: string, content: string, toc: ChapterNode[], meta: BookMeta): void {
     const dir = this.bookDir(id)
     mkdirSync(dir, { recursive: true })

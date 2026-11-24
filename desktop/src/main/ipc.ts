@@ -12,7 +12,7 @@ import type {
   SearchHit,
   TtsConfig
 } from '../shared/types'
-import { importBookFile } from './library/importer'
+import { importBookFile, reparseBook } from './library/importer'
 import { StatsStore } from './library/stats'
 import { TtsManager } from './tts'
 import { defaultBackupName, exportBackup, importBackup } from './backup'
@@ -54,8 +54,11 @@ function splitParagraphs(raw: string, title: string): { paragraphs: string[]; st
     const trimmed = line.trim()
     if (trimmed) {
       const leading = line.length - line.trimStart().length
-      // 首行往往就是章节标题本身，跳过避免重复
-      const duplicateTitle = paragraphs.length === 0 && norm(trimmed) === norm(title)
+      // 首行往往就是章节标题本身（可能还带着 `12.` 这类序号），跳过避免重复
+      const stripIndex = (value: string): string => norm(value).replace(/^[0-9０-９]{1,4}[、.．)）]/, '')
+      const duplicateTitle =
+        paragraphs.length === 0 &&
+        (norm(trimmed) === norm(title) || stripIndex(trimmed) === stripIndex(title))
       if (!duplicateTitle) {
         paragraphs.push(trimmed)
         starts.push(cursor + leading)
@@ -91,6 +94,19 @@ export function registerIpc(store: LibraryStore, getWindow: () => BrowserWindow 
     store.remove(id)
     return store.list()
   })
+
+  ipcMain.handle('library:rename', (_event, id: string, patch: { title?: string; author?: string }) => {
+    const book = store.get(id)
+    if (!book) return null
+    const title = (patch.title ?? book.title).trim() || book.title
+    const author = (patch.author ?? book.author).trim() || book.author
+    const next = { ...book, title, author, updatedAt: Date.now() }
+    store.writeMeta(id, next)
+    store.upsert(next)
+    return next
+  })
+
+  ipcMain.handle('library:reload', async (_event, id: string) => await reparseBook(store, id))
 
   ipcMain.handle('import:pick', async () => {
     const win = getWindow()

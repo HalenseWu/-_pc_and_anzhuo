@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useLibrary } from '../stores/library'
 import { useReader } from '../stores/reader'
 import type { BookMeta } from '../../../shared/types'
@@ -43,9 +44,26 @@ function Cover({ book, onOpen }: { book: BookMeta; onOpen: (book: BookMeta) => v
   )
 }
 
-function BookCard({ book, onOpen }: { book: BookMeta; onOpen: (book: BookMeta) => void }): React.JSX.Element {
+function BookCard({
+  book,
+  onOpen,
+  onMenu
+}: {
+  book: BookMeta
+  onOpen: (book: BookMeta) => void
+  onMenu: (book: BookMeta, x: number, y: number) => void
+}): React.JSX.Element {
   return (
-    <div className="card" title="双击打开" onDoubleClick={() => onOpen(book)}>
+    <div
+      className="card"
+      title="双击打开 · 右键更多"
+      onDoubleClick={() => onOpen(book)}
+      onContextMenu={(event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        onMenu(book, event.clientX, event.clientY)
+      }}
+    >
       <Cover book={book} onOpen={onOpen} />
       <div className="c-title">{book.title}</div>
       <div className="c-meta">
@@ -105,6 +123,12 @@ export function Shelf(): React.JSX.Element {
     : byTag
 
   const loaded = useLibrary((state) => state.loaded)
+  const removeBook = useLibrary((state) => state.remove)
+  const renameBook = useLibrary((state) => state.renameBook)
+  const reloadBook = useLibrary((state) => state.reloadBook)
+  const [ctxMenu, setCtxMenu] = useState<{ book: BookMeta; x: number; y: number } | null>(null)
+  const [renaming, setRenaming] = useState<{ book: BookMeta; text: string } | null>(null)
+  const [deleting, setDeleting] = useState<BookMeta | null>(null)
   const current = books[0]
   const onOpen = (book: BookMeta): void => {
     void useReader.getState().start(book)
@@ -174,7 +198,7 @@ export function Shelf(): React.JSX.Element {
 
           <div className="grid">
             {visible.map((book) => (
-              <BookCard key={book.id} book={book} onOpen={onOpen} />
+              <BookCard key={book.id} book={book} onOpen={onOpen} onMenu={(target, x, y) => setCtxMenu({ book: target, x, y })} />
             ))}
           </div>
           {visible.length === 0 && books.length > 0 ? (
@@ -201,6 +225,113 @@ export function Shelf(): React.JSX.Element {
         <span>{filter ? `筛选「${filter}」：${visible.length} 本` : '阅读数据只存在本机'}</span>
         <span>拖入文件即可导入 · 支持 TXT / EPUB / PDF</span>
       </div>
+      {ctxMenu ? (
+        <div
+          className="ctx-mask"
+          onClick={() => setCtxMenu(null)}
+          onContextMenu={(event) => {
+            event.preventDefault()
+            setCtxMenu(null)
+          }}
+        >
+          <div
+            className="ctx-menu"
+            style={{
+              left: Math.min(ctxMenu.x, window.innerWidth - 190),
+              top: Math.min(ctxMenu.y, window.innerHeight - 160)
+            }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                setRenaming({ book: ctxMenu.book, text: ctxMenu.book.title })
+                setCtxMenu(null)
+              }}
+            >
+              重命名
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setDeleting(ctxMenu.book)
+                setCtxMenu(null)
+              }}
+            >
+              删除
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const target = ctxMenu.book
+                setCtxMenu(null)
+                void reloadBook(target.id)
+              }}
+            >
+              重新载入
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {renaming ? (
+        <div className="ctx-mask" onClick={() => setRenaming(null)}>
+          <div className="mini-dialog" onClick={(event) => event.stopPropagation()}>
+            <h3>重命名</h3>
+            <input
+              autoFocus
+              value={renaming.text}
+              onChange={(event) => setRenaming({ ...renaming, text: event.target.value })}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  void renameBook(renaming.book.id, renaming.text)
+                  setRenaming(null)
+                }
+                if (event.key === 'Escape') setRenaming(null)
+              }}
+            />
+            <div className="mini-actions">
+              <button type="button" className="ghost" onClick={() => setRenaming(null)}>
+                取消
+              </button>
+              <button
+                type="button"
+                className="primary"
+                onClick={() => {
+                  void renameBook(renaming.book.id, renaming.text)
+                  setRenaming(null)
+                }}
+              >
+                保存
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {deleting ? (
+        <div className="ctx-mask" onClick={() => setDeleting(null)}>
+          <div className="mini-dialog" onClick={(event) => event.stopPropagation()}>
+            <h3>删除《{deleting.title}》？</h3>
+            <p>只会删除阅读器里的副本，不会动你的原始文件。</p>
+            <div className="mini-actions">
+              <button type="button" className="ghost" onClick={() => setDeleting(null)}>
+                取消
+              </button>
+              <button
+                type="button"
+                className="danger"
+                onClick={() => {
+                  void removeBook(deleting.id)
+                  setDeleting(null)
+                }}
+              >
+                删除
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
   )
 }

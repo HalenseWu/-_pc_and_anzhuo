@@ -34,6 +34,8 @@ interface LibraryState {
   importPaths: (paths: string[]) => Promise<void>
   pickAndImport: () => Promise<void>
   remove: (id: string) => Promise<void>
+  renameBook: (id: string, title: string) => Promise<void>
+  reloadBook: (id: string) => Promise<void>
   setNotice: (notice: string | null) => void
 }
 
@@ -115,6 +117,29 @@ export const useLibrary = create<LibraryState>((set, get) => ({
   remove: async (id) => {
     const books = (await window.wuya?.library.remove(id)) ?? []
     set({ books })
+  },
+
+  renameBook: async (id, title) => {
+    const trimmed = title.trim()
+    if (!trimmed) return
+    const updated = await window.wuya?.library.rename(id, { title: trimmed })
+    if (!updated) return
+    set((state) => ({ books: state.books.map((book) => (book.id === id ? updated : book)) }))
+  },
+
+  reloadBook: async (id) => {
+    set({ busy: true, notice: '正在重新识别…' })
+    try {
+      const result = await window.wuya?.library.reload(id)
+      if (!result || !result.ok) {
+        set({ notice: result?.error ?? '重新载入失败' })
+        return
+      }
+      const books = (await window.wuya?.library.list()) ?? []
+      set({ books, notice: `已重新识别：${result.book?.chapterCount ?? 0} 章` })
+    } finally {
+      set({ busy: false })
+    }
   },
 
   setNotice: (notice) => set({ notice })

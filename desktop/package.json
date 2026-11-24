@@ -1,6 +1,6 @@
 {
   "name": "wuya",
-  "version": "0.21.0",
+  "version": "0.22.0",
   "description": "无涯 · 本地小说阅读器",
   "main": "./out/main/index.js",
   "author": "Wuya",

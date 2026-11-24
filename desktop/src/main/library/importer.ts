@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { existsSync, readFileSync } from 'node:fs'
 import { readFile, stat } from 'node:fs/promises'
 import { basename, extname } from 'node:path'
 import type { BookMeta, ChapterNode, ImportProgress, ImportResult, ParseReport } from '../../shared/types'
@@ -235,6 +236,73 @@ export async function importBookFile(ctx: ImportContext, filePath: string): Prom
 }
 
 export const importTxtFile = importBookFile
+
+/**
+ * 重新载入：用原始文件重新解码、清洗、识别目录，覆盖正文与目录。
+ * 原始文件不在了就退回用已保存的 content.txt 重新识别章节。
+ * 保留书名/作者/封面/分组/标签，进度与锚点重置（章节 id 会变）。
+ */
+export async function reparseBook(store: LibraryStore, id: string): Promise<{ ok: boolean; book?: BookMeta; error?: string }> {
+  const book = store.get(id)
+  if (!book) return { ok: false, error: '书籍不存在' }
+  if (book.format === 'PDF') return { ok: true, book }
+
+  let content: string
+  let encoding = book.encoding
+  let sourceSize = book.sourceSize
+  let sourceMtime = book.sourceMtime
+  let sourceHash = book.sourceHash
+
+  const sourcePath = book.sourcePath
+  if (sourcePath && existsSync(sourcePath)) {
+    const buffer = await readFile(sourcePath)
+    const decoded = decodeBuffer(buffer)
+    encoding = decoded.encoding
+    content = cleanText(decoded.text)
+    const info = await stat(sourcePath)
+    sourceSize = info.size
+    sourceMtime = info.mtimeMs
+    sourceHash = createHash('sha1').update(buffer).digest('hex')
+  } else if (existsSync(store.contentPath(id))) {
+    content = readFileSync(store.contentPath(id), 'utf-8')
+  } else {
+    return { ok: false, error: '原始文件已丢失，且没有可用正文' }
+  }
+
+  let toc: ChapterNode[]
+  let volumeCount: number
+  if (book.format === 'EPUB' && sourcePath && existsSync(sourcePath)) {
+    const parsed = parseEpub(await readFile(sourcePath))
+    content = parsed.content
+    toc = parsed.toc
+    volumeCount = parsed.toc.filter((node) => node.children?.length).length
+  } else {
+    const detected = detectChapters(content)
+    toc = detected.toc
+    volumeCount = detected.volumeCount
+  }
+
+  const chapters = flatten(toc)
+  const next: BookMeta = {
+    ...book,
+    encoding,
+    sourceSize,
+    sourceMtime,
+    sourceHash,
+    totalChars: content.length,
+    chapterCount: chapters.length,
+    volumeCount,
+    currentChapterId: chapters[0]?.id ?? null,
+    anchor: null,
+    progress: 0,
+    updatedAt: Date.now()
+  }
+
+  store.writeBookFiles(id, content, toc, next)
+  store.clearTocOverride(id)
+  store.upsert(next)
+  return { ok: true, book: next }
+}
 /** PDF：原样保存，页数由渲染端首次打开时回填 */
 async function importPdf(
   ctx: ImportContext,

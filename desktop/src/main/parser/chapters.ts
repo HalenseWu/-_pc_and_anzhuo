@@ -16,6 +16,9 @@ interface Chunk {
 const VOLUME_RE =
   /^第[一二三四五六七八九十百千零〇两0-9０-９]{1,10}[卷部集篇][ \t·、:：\-—]?[^\n]{0,40}$/
 const CHAPTER_RE = /^第[一二三四五六七八九十百千零〇两0-9０-９]{1,10}[章节回][ \t·、:：\-—]?[^\n]{0,40}$/
+/** 带序号前缀的章节行：`12.第12章 标题`、`12、第12章 标题`、`12) 第12章 标题` */
+const CHAPTER_INDEXED_RE =
+  /^(?:[0-9０-９]{1,4})[、.．)）][ \t]*第[一二三四五六七八九十百千零〇两0-9０-９]{1,10}[章节回][ \t·、:：\-—]?[^\n]{0,40}$/
 const SPECIAL_RE = /^(序章|序言|楔子|引子|前言|后记|尾声|终章|番外)[^\n]{0,30}$/
 const ENGLISH_RE = /^chapter[ \t]*[0-9]{1,4}[^\n]{0,40}$/i
 const NUMERIC_RE = /^[0-9]{1,4}[、.．][ \t]?[^\n]{1,30}$/
@@ -61,13 +64,20 @@ function cnToNumber(input: string): number | null {
 }
 
 function extractNumber(title: string): number | null {
-  const m = title.match(/^第([一二三四五六七八九十百千零〇两0-9０-９]{1,10})[章节回卷部集篇]/)
+  const plain = title.replace(/^[0-9０-９]{1,4}[、.．)）][ \t]*/, '')
+  const m = plain.match(/^第([一二三四五六七八九十百千零〇两0-9０-９]{1,10})[章节回卷部集篇]/)
   if (m) return cnToNumber(m[1])
   const en = title.match(/^chapter[ \t]*([0-9]{1,4})/i)
   if (en) return Number(en[1])
   const num = title.match(/^([0-9]{1,4})[、.．]/)
   if (num) return Number(num[1])
   return null
+}
+
+/** 去掉行首的 `12.` 这类序号，避免标题里出现两套编号 */
+function normalizeTitle(title: string): string {
+  const trimmed = title.replace(/^[0-9０-９]{1,4}[、.．)）][ \t]*(?=第)/, '')
+  return trimmed || title
 }
 
 function median(values: number[]): number {
@@ -103,6 +113,9 @@ function makeCandidates(text: string): Candidate[] {
     if (VOLUME_RE.test(line)) {
       level = 1
       prior = 1
+    } else if (CHAPTER_INDEXED_RE.test(line)) {
+      level = 2
+      prior = 0.86
     } else if (CHAPTER_RE.test(line)) {
       level = 2
       prior = 0.82
@@ -120,7 +133,7 @@ function makeCandidates(text: string): Candidate[] {
 
     candidates.push({
       pos: start + (raw.length - raw.trimStart().length),
-      title: line.replace(/\s+/g, ' '),
+      title: normalizeTitle(line.replace(/\s+/g, ' ')),
       level,
       prior,
       num: extractNumber(line)
@@ -137,7 +150,38 @@ function makeCandidates(text: string): Candidate[] {
     }
     deduped.push(cand)
   }
-  return deduped
+
+  // 同一章被两种写法重复识别（`17.第17章` 与紧跟的 `第17章`）时只留一条
+  const merged: Candidate[] = []
+  for (const cand of deduped) {
+    const hitIndex = merged.findIndex(
+      (item) =>
+        item.level === cand.level &&
+        item.num !== null &&
+        item.num === cand.num &&
+        Math.abs(cand.pos - item.pos) < 600
+    )
+    if (hitIndex < 0) {
+      merged.push(cand)
+      continue
+    }
+    const prev = merged[hitIndex]
+    const better = rank(prev) >= rank(cand) ? prev : cand
+    merged[hitIndex] = better
+  }
+  return merged
+}
+
+/** 同章重复时优先：无序号前缀 > 标题更长 > 位置更早 */
+function rank(cand: Candidate): number {
+  const prefixed = /^[0-9０-９]{1,4}[、.．)）]/.test(cand.title) ? 0 : 1
+  return prefixed * 1000 + Math.min(cand.title.length, 60) * 10 - cand.pos / 1e9
+}
+
+export function debugCandidates(
+  text: string
+): { pos: number; title: string; level: number; num: number | null; prior: number }[] {
+  return makeCandidates(text)
 }
 
 export interface ChapterDetectResult {
@@ -273,7 +317,11 @@ export function detectChapters(text: string): ChapterDetectResult {
     const from = Math.max(0, i - 64)
     for (let j = from; j < i; j += 1) {
       const gap = candidates[i].pos - candidates[j].pos
-      const minGap = isVolumeToChapter(candidates[j], candidates[i]) ? 2 : 200
+      /* 卷标题到第一章，或编号正好连着（上一章只有一行）时允许贴得很近 */
+      const prevNum = candidates[j].num
+      const curNum = candidates[i].num
+      const adjacent = prevNum !== null && curNum !== null && curNum === prevNum + 1
+      const minGap = isVolumeToChapter(candidates[j], candidates[i]) || adjacent ? 2 : 200
       if (gap < minGap) continue
       const value = dp[j] + score(candidates[i], candidates[j])
       if (value > dp[i]) {
@@ -313,6 +361,27 @@ export function detectChapters(text: string): ChapterDetectResult {
   }
 
   const toc = buildTree(text, chain)
+
+  // 首个章节标记之前的正文（简介、序、站点信息）不能丢：足够长就作为「前言」
+  const leading = chain[0]?.pos ?? 0
+  if (leading > 0) {
+    const head = text.slice(0, leading)
+    const meaningful = head
+      .split('\n')
+      .filter((line) => line.trim() && !/https?:\/\/|www\.|电子书|下载|请访问|最新章节/i.test(line))
+      .join('')
+    if (meaningful.length > 300) {
+      toc.unshift({
+        id: 'c0',
+        title: '前言',
+        level: 2,
+        start: 0,
+        end: leading,
+        chars: leading
+      })
+    }
+  }
+
   const chapters = flatten(toc)
   const volumes = toc.filter((node) => node.level === 1).length
 

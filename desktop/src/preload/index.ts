@@ -39,6 +39,10 @@ const api = {
     list: (): Promise<BookMeta[]> => ipcRenderer.invoke('library:list'),
     get: (id: string): Promise<BookMeta | null> => ipcRenderer.invoke('library:get', id),
     remove: (id: string): Promise<BookMeta[]> => ipcRenderer.invoke('library:remove', id),
+    rename: (id: string, patch: { title?: string; author?: string }): Promise<BookMeta | null> =>
+      ipcRenderer.invoke('library:rename', id, patch),
+    reload: (id: string): Promise<{ ok: boolean; book?: BookMeta; error?: string }> =>
+      ipcRenderer.invoke('library:reload', id),
     dataDir: (): Promise<string> => ipcRenderer.invoke('app:data-dir'),
     openDataDir: (): Promise<boolean> => ipcRenderer.invoke('app:open-data-dir'),
     organize: (id: string, patch: { group?: string | null; tags?: string[] }): Promise<BookMeta | null> =>

@@ -22,6 +22,24 @@ const CHAPTER_HEAD_RE =
 const SENTENCE_END = /[。！？…」』”"）】]$/
 const DIALOGUE_START = /^[「『“"（(]/
 const PAGE_NUMBER_RE = /^[-—\s]*[0-9]{1,4}[-—\s]*$|^第\s*[0-9]{1,4}\s*页$/
+const INLINE_HEADING_RE = /第[一二三四五六七八九十百千零〇两0-9０-９]{1,10}[章节回]/
+const BANNER_HINT_RE = /https?:\/\/|www\.|电子书|下载|请访问|章节内容|最新网址|txt|TXT|书友|公众号|百度/
+
+/**
+ * 有些 TXT 把站点横幅和第一章挤在同一行，例如：
+ * 「爱下电子书…------章节内容开始-------1.第1章必须是穿越」
+ * 这里把行内章节标题切出来，前面像广告的部分丢掉，否则整行会因过长被忽略，第一章就此消失。
+ */
+function splitInlineHeading(line: string): { prefix: string; heading: string } | null {
+  if (line.length <= 40) return null
+  const match = line.match(INLINE_HEADING_RE)
+  if (!match || match.index === undefined || match.index === 0) return null
+  const prefix = line.slice(0, match.index).trim()
+  const heading = line.slice(match.index).trim()
+  if (!BANNER_HINT_RE.test(prefix)) return null
+  if (heading.length > 60) return null
+  return { prefix, heading }
+}
 
 function normalize(raw: string): string {
   return raw
@@ -72,6 +90,8 @@ function dropRepeatedHeaders(lines: string[]): string[] {
  */
 export function cleanText(raw: string): string {
   const normalized = normalize(raw)
+    .replace(/[-—=]{2,}\s*章节内容开始\s*[-—=]{2,}/g, '\n')
+    .replace(/[-—=]{2,}\s*章节内容结束\s*[-—=]{2,}/g, '\n')
   const rawLines = normalized.split('\n')
 
   const kept: string[] = []
@@ -82,6 +102,12 @@ export function cleanText(raw: string): string {
       continue
     }
     if (isAdLine(t) || PAGE_NUMBER_RE.test(t)) continue
+    const split = splitInlineHeading(t)
+    if (split) {
+      if (split.prefix.length > 0 && !isAdLine(split.prefix)) kept.push(split.prefix)
+      kept.push(split.heading)
+      continue
+    }
     kept.push(t)
   }
 
